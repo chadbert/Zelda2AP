@@ -35,6 +35,187 @@ class LocalRom(object):
     def get_bytes(self) -> bytes:
         return bytes(self.file)
 
+def randomize_drop_table(world, rom):
+    # TODO: Add configuration for this
+    possible_drops = [
+        0x90, #blue jar
+        0x91, #red jar
+        0x8a, #50 pbag
+        0x8b, #100 pbag
+        0x8c, #200 pbag
+        0x8d, #500 pbag
+        0x92, #1up
+        0x88  #key
+    ]
+
+    for i in range(8):
+        small_drop = world.random.randint(0, len(possible_drops) - 1)
+        large_drop = world.random.randint(0, len(possible_drops) - 1)
+
+
+        rom.write_bytes(0x1E880 + i, bytearray([possible_drops[small_drop]]))
+        rom.write_bytes(0x1E888 + i, bytearray([possible_drops[large_drop]]))
+
+#Shuffles pbag amounts to roughly + or - 66% of vanilla value
+def randomize_pbag_amounts(world, rom):
+    # TODO: shuffle pbag amounts option
+    rom.write_bytes(0x1e800, bytearray([world.random.randint(5, 9)])) #20 - 100
+    rom.write_bytes(0x1e801, bytearray([world.random.randint(7, 11)])) #50 - 300
+    rom.write_bytes(0x1e802, bytearray([world.random.randint(9, 13)]))  #100 - 700
+    rom.write_bytes(0x1e803, bytearray([world.random.randint(11, 15)]))  #200 - 1000
+
+def randomize_enemy_health(world, rom):
+    # TODO config value
+    enemy_health_pool_bank1 = [
+        0x03, 0x03, 0x03, 0x08, 0x03, 0x00, 0x00, 0x08,
+        0x02, 0x02, 0x03, 0x04, 0x03, 0x03, 0x04, 0x04,
+        0x00, 0x04, 0x0C, 0x12, 0x12, 0x18, 0x0C, 0x0E,
+        0x12, 0x04, 0x03, 0x03, 0x04, 0x08, 0x00, 0x02
+    ]
+
+    enemy_health_pool_bank2 = [
+        0x03, 0x04, 0x04, 0x30, 0x08, 0x00, 0x00, 0x08,
+        0x02, 0x02, 0x0C, 0x0C, 0x08, 0x08, 0x0C, 0x0C,
+        0x00, 0x18, 0x10, 0x10, 0x08, 0x30, 0x20, 0x30,
+        0x20, 0x38, 0x01
+    ]
+
+    new_enemy_health_pool_bank1 = randomize_values(world, enemy_health_pool_bank1)
+    rom.write_bytes(0x5434, bytearray(new_enemy_health_pool_bank1))
+
+    new_enemy_health_pool_bank2 = randomize_values(world, enemy_health_pool_bank2)
+    rom.write_bytes(0x9434, bytearray(new_enemy_health_pool_bank2))
+    #randomize_enemy_health_internal(world, rom, 0x5434, 0x5453)
+    #randomize_enemy_health_internal(world, rom, 0x9434, 0x944E)
+    #randomize_enemy_health_internal(world, rom, 0x11435, 0x11435)
+    #randomize_enemy_health_internal(world, rom, 0x11437, 0x11454)
+    #randomize_enemy_health_internal(world, rom, 0x13C86, 0x13C87)
+    #randomize_enemy_health_internal(world, rom, 0x15434, 0x15438)
+    #randomize_enemy_health_internal(world, rom, 0x15440, 0x15443)
+    #randomize_enemy_health_internal(world, rom, 0x15445, 0x1544B)
+    #randomize_enemy_health_internal(world, rom, 0x1544E, 0x1544E)
+    #randomize_enemy_health_internal(world, rom, 0x12935, 0x12935)
+    #randomize_enemy_health_internal(world, rom, 0x12937, 0x12954)
+
+def randomize_enemy_other_attributes(world, rom):
+    # XX.. ....  Palette code
+    # ..X. ....  Requires fire
+    # ...X ....  Steals exp
+    # .... XXXX  Experience code
+
+    # bank1 is Western continent
+    # bank2 is Eastern and Maze Island
+
+    # All enemies here start without requiring fire and stealing exp
+    # These will be randomized to different enemies
+    enemy_attributes_bank1 = [
+        0xC2, 0xC1, 0x81, 0x84, 0xC2, 0x80, 0x80, 0x84,
+        0x00, 0x00, 0x81, 0xC2, 0x02, 0x82, 0x84, 0x84,
+        0x40, 0x44, 0x85, 0xC5, 0x48, 0x89, 0x45, 0x85,
+        0xC6, 0xC2, 0x00, 0x41, 0xC3, 0x83, 0x00, 0x41,
+        0x02
+    ]
+
+    enemy_attributes_bank2 = [
+        0xC3, 0xC1, 0x81, 0xD7, 0xC4, 0x80, 0x90, 0x84,
+        0x10, 0x10, 0x83, 0xC4, 0x10, 0x93, 0xC5, 0xC5,
+        0x40, 0xE7, 0x85, 0xC4, 0xC7, 0xE7, 0xCA, 0x89,
+        0x4A, 0xCB, 0x87
+    ]
+
+    randomize_experience_stealing(world, enemy_attributes_bank1, 5)
+    randomize_experience_stealing(world, enemy_attributes_bank2, 5)
+
+    randomize_enemy_exp_in_bank(world, enemy_attributes_bank1)
+    randomize_enemy_exp_in_bank(world, enemy_attributes_bank2)
+
+    rom.write_bytes(0x54E8, bytearray(enemy_attributes_bank1))
+    rom.write_bytes(0x94e8, bytearray(enemy_attributes_bank2))
+    # 0x54E8; i < 0x54ED
+    # 0x54EF; i < 0x54F8
+    # 0x54F9; i < 0x5508
+
+def randomize_experience_stealing(world, enemy_attribute_bank: [], max_number: int):
+    print("New enemies that steal experience")
+    # Randomize enemies that steal exp, dups are just less enemies getting this annoyance
+    for i in range(max_number):
+        new_enemy = world.random.randint(0, len(enemy_attribute_bank) - 1)
+        print(new_enemy)
+        if (new_enemy != 16):  # 16 is an elevator
+            enemy_attribute_bank[new_enemy] = enemy_attribute_bank[new_enemy] | 0x10
+
+    return enemy_attribute_bank
+
+def randomize_enemy_exp_in_bank(world, enemy_attribute_bank: []):
+    print("experience codes")
+    for i in range(len(enemy_attribute_bank)):
+        exp_code = enemy_attribute_bank[i] & 0x0F
+        min_exp_code = round(exp_code - exp_code * 0.5)
+        max_exp_code = round(exp_code + exp_code * 0.5)
+        new_exp_code = world.random.randint(min_exp_code, max_exp_code)
+
+        enemy_attribute_bank[i] = (enemy_attribute_bank[i] & 0xF0) | new_exp_code
+        print(exp_code, min_exp_code, max_exp_code, new_exp_code, enemy_attribute_bank[i])
+
+    return enemy_attribute_bank
+
+def randomize_values(world, input_values: []):
+    new_values = []
+    for value in input_values:
+        min_value = value - round(value * 0.5)
+        max_value = value + round(value * 0.5)
+        print(min_value, max_value);
+        new_values.append(world.random.randint(min_value, max_value))
+
+    return new_values
+
+def randomize_enemy_health_internal(world, rom, start_address, end_address):
+    for i in range(start_address, end_address):
+        vanilla_health = rom.read_byte(i)
+        new_health = world.random.randint(vanilla_health * 0.5, vanilla_health * 1.5)
+        if new_health > 255:
+            new_health = 255
+
+        print(i)
+        print(bytearray([new_health]))
+        rom.write_bytes(i, bytearray([new_health]))
+
+# Randomizes the attack effectiveness from 66% to 150% of vanilla per level
+def randomize_attack_effectiveness(world, rom):
+    print('randomizing attack')
+    # address 0x1E67D with 8 bytes
+
+    vanilla_values = [0x02, 0x03, 0x04, 0x06, 0x09, 0x0C, 0x12, 0x18]
+    new_values = []
+    previous = 0
+    new_attack = 0
+
+    for attack in vanilla_values:
+
+        min_attack = attack - round(attack * 0.333)
+        max_attack = attack + round(attack * 0.5)
+
+        new_attack = world.random.randint(min_attack, max_attack)
+
+        # Do not allow attack to go down upon leveling up
+        if new_attack < previous:
+            new_attack = previous
+
+        previous = new_attack
+        new_values.append(new_attack)
+
+    print('vanilla attack effectiveness: ')
+    print(bytearray(vanilla_values))
+    print('Random attack effectiveness: ')
+    print(bytearray(new_values))
+    rom.write_bytes(0x1E67D, bytearray(new_values))
+
+def randomize_life_spell_amount(world, rom):
+    containers = world.random.randint(1, 5)
+    hp = containers * 16
+    print("Life spell effectiveness: ", hp)
+    # TODO configure this
+    rom.write_bytes(0xE7A, bytearray([hp]))
 
 def patch_rom(world, rom, player: int):
 
@@ -83,11 +264,11 @@ def patch_rom(world, rom, player: int):
         for i in range(9):
             rom.copy_bytes(0x29650 + (i * 0x2000), 0xC0, 0x3AB00 + (i * 0xC0)) # Bricks
 
-        for i in range(9):
-            rom.copy_bytes(0x298F0 + (i * 0x2000), 0x40, 0x3B1C0 + (i * 0x40)) # Pillar head
+        #for i in range(9):
+         #   rom.copy_bytes(0x298F0 + (i * 0x2000), 0x40, 0x3B1C0 + (i * 0x40)) # Pillar head
 
-        for i in range(9):
-            rom.copy_bytes(0x29A60 + (i * 0x2000), 0x20, 0x3B400 + (i * 0x20)) # Pillar Body
+       # for i in range(9):
+        #    rom.copy_bytes(0x29A60 + (i * 0x2000), 0x20, 0x3B400 + (i * 0x20)) # Pillar Body
 
         for index, tileset in enumerate(base_tilesets):
             rom.copy_bytes(0x3AB00 + (palace_tilesets[index] * 0xC0), 0xC0, 0x29650 + (tileset * 0x2000))
@@ -136,6 +317,14 @@ def patch_rom(world, rom, player: int):
         rom.write_bytes(0x052B5, bytearray([0x3D]))
         rom.write_bytes(0x052AA, bytearray([0x3D]))
         rom.write_bytes(0x052C0, bytearray([0x2D]))
+
+    # TODO: Add option for these
+    randomize_pbag_amounts(world, rom)
+    randomize_drop_table(world, rom)
+    randomize_enemy_health(world, rom)
+    randomize_enemy_other_attributes(world, rom)
+    randomize_attack_effectiveness(world, rom)
+    randomize_life_spell_amount(world, rom)
     
     rom.write_bytes(0x3A2B0, world.world_version.encode("ascii"))
     rom.write_bytes(0x3A2E0, bytearray([world.options.encounter_rate.value]))
@@ -200,6 +389,16 @@ class Z2PatchExtensions(APPatchExtension):
         enemy_timer_table = list(rom.read_bytes(0x250, 6))
         for timer in enemy_timer_table:
             print(hex(int(timer * encounter_rate)))
+
+        #half encounter rate
+        rom.write_bytes(0x250, bytearray([0x40]))
+        rom.write_bytes(0x251, bytearray([0x30]))
+        rom.write_bytes(0x252, bytearray([0x30]))
+        rom.write_bytes(0x253, bytearray([0x40]))
+        rom.write_bytes(0x254, bytearray([0x12]))
+        rom.write_bytes(0x255, bytearray([0x06]))
+
+        rom.write_bytes(0x88A, bytearray([0x10]))
         return rom.get_bytes()
 
 header = b"\x4E\x45\x53\x1A\x08\x10\x12\x00\x00\x00\x00\x00\x00\x00\x00\x00"
