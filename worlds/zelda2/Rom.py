@@ -1,12 +1,16 @@
 import hashlib
 import os
+from math import floor
+
 import Utils
 import typing
 import struct
 from worlds.Files import APProcedurePatch, APTokenMixin, APTokenTypes, APPatchExtension
 from typing import TYPE_CHECKING, Optional
 from logging import warning
-from .game_data import world_version
+
+from .game_data import world_version, enemy_health, enemy_attribute_tables, enemy_encounter_tables
+from .Options import DropTable, EncounterRate
 
 if TYPE_CHECKING:
     from . import Z2World
@@ -35,50 +39,81 @@ class LocalRom(object):
     def get_bytes(self) -> bytes:
         return bytes(self.file)
 
+def prevent_stoning_of_palaces(rom):
+    rom.write_bytes(0x47ba, bytearray([0xEA, 0xEA, 0xEA]))
+    rom.write_bytes(0x87b3, bytearray([0xEA, 0xEA, 0xEA]))
+    rom.write_bytes(0x1e02e, bytearray([0xEA, 0xEA, 0xEA]))
+
+def disable_most_flashing(rom):
+    rom.write_bytes(0x47ba, bytearray([0x12, 0x12, 0x12]))
+    rom.write_bytes(0x1C9FA, bytearray([0x16]))
+    rom.write_bytes(0x1C9FC, bytearray([0x16]))
+
+def alter_encounter_table(world, rom):
+    if world.options.encounter_rate == EncounterRate.option_half:
+        rom.write_bytes(0x250, bytearray([0x40]))
+        rom.write_bytes(0x251, bytearray([0x30]))
+        rom.write_bytes(0x252, bytearray([0x30]))
+        rom.write_bytes(0x253, bytearray([0x40]))
+        rom.write_bytes(0x254, bytearray([0x12]))
+        rom.write_bytes(0x255, bytearray([0x06]))
+        rom.write_bytes(0x88A, bytearray([0x10]))
+
 def randomize_drop_table(world, rom):
-    # TODO: Add configuration for this
+    if world.options.drop_table == DropTable.option_vanilla:
+        return
+
+    blue_jar = 0x90
+    red_jar = 0x91
+    pbag_50 = 0x8a
+    pbag_100 = 0x8b
+    pbag_200 = 0x8c
+    pbag_500 = 0x8d
+    # "1up": 0x92, # does not work yet
+    # "key": 0x88 # does not work yet
+
     possible_drops = [
-        0x90, #blue jar
-        0x91, #red jar
-        0x8a, #50 pbag
-        0x8b, #100 pbag
-        0x8c, #200 pbag
-        0x8d, #500 pbag
-        0x92, #1up
-        0x88  #key
+        red_jar,
+        pbag_200
     ]
+
+    if world.options.drop_table == DropTable.option_high_value:
+        possible_drops.append(pbag_500)
+        # Adding duplicates of lower value ones in order to not make it ludicrous
+        possible_drops.append(pbag_200)
+        possible_drops.append(pbag_200)
+        possible_drops.append(red_jar)
+        possible_drops.append(red_jar)
+
+    else:
+        possible_drops.append(blue_jar)
+        possible_drops.append(pbag_50)
+        possible_drops.append(pbag_100)
+
+        if world.options.drop_table == DropTable.option_full:
+            possible_drops.append(pbag_500)
 
     for i in range(8):
         small_drop = world.random.randint(0, len(possible_drops) - 1)
         large_drop = world.random.randint(0, len(possible_drops) - 1)
-
 
         rom.write_bytes(0x1E880 + i, bytearray([possible_drops[small_drop]]))
         rom.write_bytes(0x1E888 + i, bytearray([possible_drops[large_drop]]))
 
 #Shuffles pbag amounts to roughly + or - 66% of vanilla value
 def randomize_pbag_amounts(world, rom):
-    # TODO: shuffle pbag amounts option
-    rom.write_bytes(0x1e800, bytearray([world.random.randint(5, 9)])) #20 - 100
-    rom.write_bytes(0x1e801, bytearray([world.random.randint(7, 11)])) #50 - 300
-    rom.write_bytes(0x1e802, bytearray([world.random.randint(9, 13)]))  #100 - 700
-    rom.write_bytes(0x1e803, bytearray([world.random.randint(11, 15)]))  #200 - 1000
+    if world.options.randomize_pbag_xp_rewards:
+        rom.write_bytes(0x1e800, bytearray([world.random.randint(5, 9)])) #20 - 100
+        rom.write_bytes(0x1e801, bytearray([world.random.randint(7, 11)])) #50 - 301
+        rom.write_bytes(0x1e802, bytearray([world.random.randint(9, 13)]))  #100 - 700
+        rom.write_bytes(0x1e803, bytearray([world.random.randint(11, 15)]))  #200 - 1000
 
 def randomize_enemy_health(world, rom):
-    # TODO config value
-    enemy_health_pool_bank1 = [
-        0x03, 0x03, 0x03, 0x08, 0x03, 0x00, 0x00, 0x08,
-        0x02, 0x02, 0x03, 0x04, 0x03, 0x03, 0x04, 0x04,
-        0x00, 0x04, 0x0C, 0x12, 0x12, 0x18, 0x0C, 0x0E,
-        0x12, 0x04, 0x03, 0x03, 0x04, 0x08, 0x00, 0x02
-    ]
+    if not world.options.randomize_enemy_health:
+        return
 
-    enemy_health_pool_bank2 = [
-        0x03, 0x04, 0x04, 0x30, 0x08, 0x00, 0x00, 0x08,
-        0x02, 0x02, 0x0C, 0x0C, 0x08, 0x08, 0x0C, 0x0C,
-        0x00, 0x18, 0x10, 0x10, 0x08, 0x30, 0x20, 0x30,
-        0x20, 0x38, 0x01
-    ]
+    enemy_health_pool_bank1 = enemy_health["bank1"].copy()
+    enemy_health_pool_bank2 = enemy_health["bank2"].copy()
 
     new_enemy_health_pool_bank1 = randomize_values(world, enemy_health_pool_bank1)
     rom.write_bytes(0x5434, bytearray(new_enemy_health_pool_bank1))
@@ -98,6 +133,12 @@ def randomize_enemy_health(world, rom):
     #randomize_enemy_health_internal(world, rom, 0x12937, 0x12954)
 
 def randomize_enemy_other_attributes(world, rom):
+    if not world.options.randomize_enemy_xp_rewards and \
+        not world.options.randomize_enemies_that_steal_xp and \
+        not world.options.randomize_which_enemies_require_fire:
+        print("No enemy attributes randomized")
+        return
+
     # XX.. ....  Palette code
     # ..X. ....  Requires fire
     # ...X ....  Steals exp
@@ -105,23 +146,8 @@ def randomize_enemy_other_attributes(world, rom):
 
     # bank1 is Western continent
     # bank2 is Eastern and Maze Island
-
-    # All enemies here start without requiring fire and stealing exp
-    # These will be randomized to different enemies
-    enemy_attributes_bank1 = [
-        0xC2, 0xC1, 0x81, 0x84, 0xC2, 0x80, 0x80, 0x84,
-        0x00, 0x00, 0x81, 0xC2, 0x02, 0x82, 0x84, 0x84,
-        0x40, 0x44, 0x85, 0xC5, 0x48, 0x89, 0x45, 0x85,
-        0xC6, 0xC2, 0x00, 0x41, 0xC3, 0x83, 0x00, 0x41,
-        0x02
-    ]
-
-    enemy_attributes_bank2 = [
-        0xC3, 0xC1, 0x81, 0xD7, 0xC4, 0x80, 0x90, 0x84,
-        0x10, 0x10, 0x83, 0xC4, 0x10, 0x93, 0xC5, 0xC5,
-        0x40, 0xE7, 0x85, 0xC4, 0xC7, 0xE7, 0xCA, 0x89,
-        0x4A, 0xCB, 0x87
-    ]
+    enemy_attributes_bank1 = enemy_attribute_tables["bank1"].copy()
+    enemy_attributes_bank2 = enemy_attribute_tables["bank2"].copy()
 
     randomize_experience_stealing(world, enemy_attributes_bank1, 5)
     randomize_experience_stealing(world, enemy_attributes_bank2, 5)
@@ -129,13 +155,22 @@ def randomize_enemy_other_attributes(world, rom):
     randomize_enemy_exp_in_bank(world, enemy_attributes_bank1)
     randomize_enemy_exp_in_bank(world, enemy_attributes_bank2)
 
+    # Preventing crashes and strange bugs
+    enemy_attributes_bank1[2] = 0x40 # Don't want doors stealing experience
+    enemy_attributes_bank1[6] = 0x90 # unknown enemy that likely should not be changed
+    enemy_attributes_bank1[16] = 0x40 # Don't want to break elevators
+
     rom.write_bytes(0x54E8, bytearray(enemy_attributes_bank1))
     rom.write_bytes(0x94e8, bytearray(enemy_attributes_bank2))
-    # 0x54E8; i < 0x54ED
-    # 0x54EF; i < 0x54F8
-    # 0x54F9; i < 0x5508
 
 def randomize_experience_stealing(world, enemy_attribute_bank: [], max_number: int):
+    if not world.options.randomize_enemies_that_steal_xp:
+        return
+
+    # Remove exp stealing from all enemies
+    for i in range(len(enemy_attribute_bank)):
+        enemy_attribute_bank[i] = enemy_attribute_bank[i] & 0xEF
+
     print("New enemies that steal experience")
     # Randomize enemies that steal exp, dups are just less enemies getting this annoyance
     for i in range(max_number):
@@ -147,6 +182,9 @@ def randomize_experience_stealing(world, enemy_attribute_bank: [], max_number: i
     return enemy_attribute_bank
 
 def randomize_enemy_exp_in_bank(world, enemy_attribute_bank: []):
+    if not world.options.randomize_enemy_xp_rewards:
+        return
+
     print("experience codes")
     for i in range(len(enemy_attribute_bank)):
         exp_code = enemy_attribute_bank[i] & 0x0F
@@ -182,13 +220,14 @@ def randomize_enemy_health_internal(world, rom, start_address, end_address):
 
 # Randomizes the attack effectiveness from 66% to 150% of vanilla per level
 def randomize_attack_effectiveness(world, rom):
+    if not world.options.randomize_attack_effectiveness:
+        return
+
     print('randomizing attack')
     # address 0x1E67D with 8 bytes
-
     vanilla_values = [0x02, 0x03, 0x04, 0x06, 0x09, 0x0C, 0x12, 0x18]
     new_values = []
     previous = 0
-    new_attack = 0
 
     for attack in vanilla_values:
 
@@ -217,7 +256,94 @@ def randomize_life_spell_amount(world, rom):
     # TODO configure this
     rom.write_bytes(0xE7A, bytearray([hp]))
 
+def randomize_enemies(world, rom):
+    moa = 0x06
+    ache = 0x07  # keese or bats
+    acheman = 0x0A
+    red_deeler = 0x0D
+    blue_deeler = 0x0E
+    geldarm = 0x20  # beanstalk
+    megmet = 0x1F  # bouncy cat
+    flying_enemies = [moa, ache, acheman, red_deeler, blue_deeler]
+    generators = [0x0B, 0x0C, 0x0F, 0x1D]
+    small_enemies = [0x03, 0x04, 0x05, 0x11, 0x12, 0x1C, megmet]
+    large_enemies = [geldarm, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B]
+    small_and_large_enemies = small_enemies + large_enemies
+    print(bytearray(small_and_large_enemies))
+    enemy_addr = 0x48B0
+    enemy_ptr = 0x45B1
+
+    west_enemy_encounter_bank1 = enemy_encounter_tables["bank1"].copy()
+
+    print(len(west_enemy_encounter_bank1))
+
+    current_index = 0
+
+    for encounter_index in range(25):
+        num_bytes = west_enemy_encounter_bank1[current_index]
+        print("number of bytes: ", num_bytes)
+        current_index += 2
+
+        for enemy_index in range(floor(num_bytes / 2)):
+            enemy = west_enemy_encounter_bank1[current_index] & 0x3F
+            high_part = west_enemy_encounter_bank1[current_index] & 0xC0
+
+            #mixing small and large
+            if enemy in small_and_large_enemies:
+                new_enemy_index = world.random.randint(0, len(small_and_large_enemies) - 1)
+                new_enemy = small_and_large_enemies[new_enemy_index]
+                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                west_enemy_encounter_bank1[current_index] = new_enemy + high_part
+
+                if enemy in small_enemies and new_enemy in large_enemies and new_enemy != geldarm:
+                    new_position = move_y_position(west_enemy_encounter_bank1[current_index - 1], -32)
+                    west_enemy_encounter_bank1[current_index - 1] = new_position
+                elif new_enemy == geldarm and enemy != geldarm:
+                    new_position = move_y_position(west_enemy_encounter_bank1[current_index - 1], -48)
+                    west_enemy_encounter_bank1[current_index - 1] = new_position
+                elif new_enemy == megmet and enemy != megmet:
+                    new_position = move_y_position(west_enemy_encounter_bank1[current_index - 1], -16)
+                    west_enemy_encounter_bank1[current_index - 1] = new_position
+
+            elif enemy in flying_enemies:
+                new_enemy_index = world.random.randint(0, len(flying_enemies) - 1)
+                new_enemy = flying_enemies[new_enemy_index]
+                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                west_enemy_encounter_bank1[current_index] = new_enemy + high_part
+
+                if new_enemy in [ache, acheman, red_deeler, blue_deeler]:
+                    y_pos = 0
+                    x_pos = west_enemy_encounter_bank1[current_index - 1] & 0x0F
+                    west_enemy_encounter_bank1[current_index - 1] = y_pos + x_pos
+
+            elif enemy in generators:
+                new_enemy_index = world.random.randint(0, len(generators) - 1)
+                new_enemy = generators[new_enemy_index]
+                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                west_enemy_encounter_bank1[current_index] = new_enemy + high_part
+
+            current_index += 2
+
+        print("current index: ", current_index)
+
+    print("New encounter table")
+    print(west_enemy_encounter_bank1)
+    for i in range(len(west_enemy_encounter_bank1)):
+        if west_enemy_encounter_bank1[i] > 255 or west_enemy_encounter_bank1[i] < 0:
+            print("index ", i, " is out of range: ", west_enemy_encounter_bank1[i])
+    rom.write_bytes(0x48B2, bytearray(west_enemy_encounter_bank1))
+
+def move_y_position(position_byte, y_position_delta):
+    y_pos = position_byte & 0xF0
+    x_pos = position_byte & 0x0F
+    if y_pos > (y_position_delta * -1):
+        y_pos += y_position_delta
+    print("input: ", position_byte, "y: ", y_pos, "x: ", x_pos, " together: ",y_pos + x_pos)
+    return y_pos + x_pos
+
 def patch_rom(world, rom, player: int):
+    prevent_stoning_of_palaces(rom)
+    #disable_most_flashing(rom)
 
     if world.options.random_tunic_color:
         shield_color = world.random.randint(0x10, 0x3E)
@@ -264,11 +390,11 @@ def patch_rom(world, rom, player: int):
         for i in range(9):
             rom.copy_bytes(0x29650 + (i * 0x2000), 0xC0, 0x3AB00 + (i * 0xC0)) # Bricks
 
-        #for i in range(9):
-         #   rom.copy_bytes(0x298F0 + (i * 0x2000), 0x40, 0x3B1C0 + (i * 0x40)) # Pillar head
+        for i in range(9):
+            rom.copy_bytes(0x298F0 + (i * 0x2000), 0x40, 0x3B1C0 + (i * 0x40)) # Pillar head
 
-       # for i in range(9):
-        #    rom.copy_bytes(0x29A60 + (i * 0x2000), 0x20, 0x3B400 + (i * 0x20)) # Pillar Body
+        for i in range(9):
+            rom.copy_bytes(0x29A60 + (i * 0x2000), 0x20, 0x3B400 + (i * 0x20)) # Pillar Body
 
         for index, tileset in enumerate(base_tilesets):
             rom.copy_bytes(0x3AB00 + (palace_tilesets[index] * 0xC0), 0xC0, 0x29650 + (tileset * 0x2000))
@@ -318,13 +444,20 @@ def patch_rom(world, rom, player: int):
         rom.write_bytes(0x052AA, bytearray([0x3D]))
         rom.write_bytes(0x052C0, bytearray([0x2D]))
 
-    # TODO: Add option for these
     randomize_pbag_amounts(world, rom)
     randomize_drop_table(world, rom)
     randomize_enemy_health(world, rom)
     randomize_enemy_other_attributes(world, rom)
     randomize_attack_effectiveness(world, rom)
     randomize_life_spell_amount(world, rom)
+    randomize_enemies(world, rom)
+    alter_encounter_table(world, rom)
+
+    #rom.write_bytes(0x48B0, bytearray([0x01, 0x01, 0x03, 0x7A, 0x52, 0x01, 0x0B, 0x6F, 0x05, 0x72, 0x45, 0x75, 0x5C, 0x7A, 0x5F, 0x77, 0x95, 0x01, 0x0B]))
+    #rom.write_bytes(0x4959, bytearray([0x0F]))
+    #rom.write_bytes(0x495B, bytearray([0x18]))
+    #rom.write_bytes(0x495E, bytearray([0x15]))
+ #   rom.write_bytes(0x48CE, bytearray([0x06, 0x09,0x0A, 0x0D, 0x0E]))
     
     rom.write_bytes(0x3A2B0, world.world_version.encode("ascii"))
     rom.write_bytes(0x3A2E0, bytearray([world.options.encounter_rate.value]))
@@ -383,22 +516,13 @@ class Z2PatchExtensions(APPatchExtension):
         if client_version != version_check_str and version_check_str != "":
             raise Exception(f"Error! Patch generated on Zelda II APWorld version {version_check_str} doesn't match client version {client_version}! " +
                             f"Please use Zelda II APWorld version {version_check_str} for patching.")
-        multipliers = [2.5, 2, 1, 0.5, 0.3]
-        encounter_rate = multipliers[int.from_bytes(rom.read_bytes(0x3A2E0, 1))]
-        print(encounter_rate)
-        enemy_timer_table = list(rom.read_bytes(0x250, 6))
-        for timer in enemy_timer_table:
-            print(hex(int(timer * encounter_rate)))
+        #multipliers = [2.5, 2, 1, 0.5, 0.3]
+        #encounter_rate = multipliers[int.from_bytes(rom.read_bytes(0x3A2E0, 1))]
+        #print(encounter_rate)
+        #enemy_timer_table = list(rom.read_bytes(0x250, 6))
+        #for timer in enemy_timer_table:
+        #    print(hex(int(timer * encounter_rate)))
 
-        #half encounter rate
-        rom.write_bytes(0x250, bytearray([0x40]))
-        rom.write_bytes(0x251, bytearray([0x30]))
-        rom.write_bytes(0x252, bytearray([0x30]))
-        rom.write_bytes(0x253, bytearray([0x40]))
-        rom.write_bytes(0x254, bytearray([0x12]))
-        rom.write_bytes(0x255, bytearray([0x06]))
-
-        rom.write_bytes(0x88A, bytearray([0x10]))
         return rom.get_bytes()
 
 header = b"\x4E\x45\x53\x1A\x08\x10\x12\x00\x00\x00\x00\x00\x00\x00\x00\x00"

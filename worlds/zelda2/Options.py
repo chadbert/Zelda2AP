@@ -60,6 +60,26 @@ class EncounterRate(Choice):
     option_2x = 3
     default = 1
 
+class DropTable(Choice):
+    """Randomizes what can be dropped from enemies.
+       Normalized: blue/red jars, 50 pbag, 100 pbag, and 200 pbag
+       Full: adds 500 pbag plus Normalized
+       High Value: red jar, 200 pbag, 500 pbag"""
+    display_name = "Randomize Drop Table"
+    option_vanilla = 0
+    option_normalized = 1
+    option_full = 2
+    option_high_value = 3
+    default = 1
+
+class RandomizePbagXpRewards(Toggle):
+    """Randomizes the xp rewarded by pbags to roughly +-50-67% of vanilla values
+       50 pbag: 20, 50, 70, 100
+       100 pbag: 50, 70, 100, 200
+       200 pbag: 50, 100, 200, 301, 500
+       500 pbag: 200, 301, 500, 700, 1000"""
+    display_name = "Randomize Pbag XP Rewards"
+
 class RemoveEarlyBoulder(Toggle):
     """Removes the boulder blocking the south part of the western continent."""
     display_name = "Remove Early Boulder"
@@ -71,6 +91,10 @@ class StartingLife(Range):
     range_end = 8
     default = 2
 
+class RandomizeLifeEffectiveness(Toggle):
+    """Randomizes how effective life levels are by +/- 50% of vanilla values"""
+    display_name = "Randomize Life Effectiveness"
+
 class StartingAttack(Range):
     """What your starting Attack level is."""
     display_name = "Starting Attack Level"
@@ -78,12 +102,37 @@ class StartingAttack(Range):
     range_end = 8
     default = 2
 
+class RandomizeAttackEffectiveness(Toggle):
+    """Randomizes how effective attack levels are from 67% to 150% of vanilla values"""
+    display_name = "Randomize Life Effectiveness"
+
 class StartingMagic(Range):
     """What your starting Magic level is."""
     display_name = "Starting Magic Level"
     range_start = 1
     range_end = 8
     default = 2
+
+class RandomizeSpellCosts(Toggle):
+    """Randomizes how much each spell costs by +/- 50% of vanilla values
+       Each spell is randomized independently"""
+    display_name = "Randomize Life Effectiveness"
+
+class RandomizeEnemyHealth(Toggle):
+    """Randomizes enemy health to roughly +-50% of vanilla values"""
+    display_name = "Randomize Enemy Health"
+
+class RandomizeEnemyXpRewards(Toggle):
+    """Randomizes enemy xp rewards to roughly +-50% of vanilla values"""
+    display_name = "Randomize Enemy XP Rewards"
+
+class RandomizeEnemiesThatStealXp(Toggle):
+    """Randomizes which enemies steal XP"""
+    display_name = "Randomize Enemies That Steal XP"
+
+class RandomizeWhichEnemiesRequireFire(Toggle):
+    """Randomizes which enemies that are immune to swords on East continent and Maze Island"""
+    display_name = "Randomize Which Enemies Require Fire"
 
 class RandomPalaceGraphics(Toggle):
     """Randomizes the color and tiles of each Palace except the Great Palace."""
@@ -119,6 +168,8 @@ class BetterBoots(Toggle):
 class Z2Options(PerGameCommonOptions):
     required_crystals: RequiredCrystals
     key_shuffle: KeyShuffle
+    drop_table: DropTable
+    randomize_pbag_xp_rewards: RandomizePbagXpRewards
     spell_locations: SpellLocations
     early_candle: EarlyCandle
     candle_required: RequireCandle
@@ -128,14 +179,20 @@ class Z2Options(PerGameCommonOptions):
     palace_respawn: PalaceRespawn
     fast_great_palace: FastPalace
     starting_life: StartingLife
+    randomize_life_effectiveness: RandomizeLifeEffectiveness
     starting_magic: StartingMagic
+    randomize_spell_costs: RandomizeSpellCosts
     starting_attack: StartingAttack
+    randomize_attack_effectiveness: RandomizeAttackEffectiveness
     starting_lives: StartingLives
     encounter_rate: EncounterRate
+    randomize_enemy_health: RandomizeEnemyHealth
+    randomize_enemy_xp_rewards: RandomizeEnemyXpRewards
+    randomize_enemies_that_steal_xp: RandomizeEnemiesThatStealXp
+    randomize_which_enemies_require_fire: RandomizeWhichEnemiesRequireFire
     keep_exp: KeepExp
     random_tunic_color: RandomTunicColor
     random_palace_graphics: RandomPalaceGraphics
-
 
 z2_option_groups = [
     OptionGroup("Game Settings", [
