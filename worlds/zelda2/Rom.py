@@ -248,6 +248,64 @@ def randomize_attack_effectiveness(world, rom):
     print('Random attack effectiveness: ')
     print(bytearray(new_values))
     rom.write_bytes(0x1E67D, bytearray(new_values))
+    
+def randomize_magic_cost(world, rom):
+    if not world.options.randomize_spell_costs:
+        return
+
+    print("randomizing spells")
+    shield_costs = [0x40, 0x30, 0x30, 0x20, 0x20, 0x20, 0x20, 0x20]
+    jump_costs = [0x60, 0x50, 0x40, 0x40, 0x28, 0x20, 0x18, 0x10]
+    life_costs = [0x8C, 0x8C, 0x78, 0x78, 0x64, 0x64, 0x64, 0x64]
+    fairy_costs = [0xA0, 0xA0, 0x78, 0x78, 0x50, 0x50, 0x50, 0x50]
+    fire_costs = [0xF0, 0xA0, 0x78, 0x3C, 0x20, 0x20, 0x20, 0x20]
+    reflect_costs = [0xF0, 0xF0, 0xA0, 0x60, 0x50, 0x40, 0x30, 0x20]
+    spell_costs = [0xF0, 0xE0, 0xC0, 0xA0, 0x60, 0x40, 0x30, 0x20]
+    thunder_costs = [0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xC8, 0x80]
+
+    print("shield")
+    randomize_spell_cost(world, shield_costs)
+    randomize_spell_cost(world, jump_costs)
+    randomize_spell_cost(world, life_costs)
+    randomize_spell_cost(world, fairy_costs)
+    randomize_spell_cost(world, fire_costs)
+    randomize_spell_cost(world, reflect_costs)
+    randomize_spell_cost(world, spell_costs)
+    randomize_spell_cost(world, thunder_costs)
+
+    rom.write_bytes(0xD8B, bytearray(shield_costs))
+    rom.write_bytes(0xd93, bytearray(jump_costs))
+    rom.write_bytes(0xd9b, bytearray(life_costs))
+    rom.write_bytes(0xda3, bytearray(fairy_costs))
+    rom.write_bytes(0xdab, bytearray(fire_costs))
+    rom.write_bytes(0xdb3, bytearray(reflect_costs))
+    rom.write_bytes(0xdbb, bytearray(spell_costs))
+    rom.write_bytes(0xdc3, bytearray(thunder_costs))
+
+def randomize_spell_cost(world, costs: []):
+    previous_cost = 120
+
+    for i in range(len(costs)):
+        cost = costs[i]
+        high_part = (cost & 0xF0) >> 4
+        low_part = cost & 0x0F
+        actual_cost = high_part * 8 + low_part / 2
+
+        min_cost = actual_cost - round(actual_cost * 0.25)
+        max_cost = actual_cost + round(actual_cost * 0.5)
+
+        new_cost = world.random.randint(min_cost, min(max_cost, 120))
+        if new_cost > previous_cost:
+            print("new cost is greater than previous cost", new_cost, previous_cost)
+            new_cost = previous_cost
+
+        high_part = floor(new_cost / 8) << 4
+        low_part = new_cost % 8
+        costs[i] = high_part + (low_part * 2)
+
+        print("vanilla ", actual_cost, " new cost ", new_cost, "mem_value", costs[i])
+        previous_cost = new_cost
+
 
 def randomize_life_spell_amount(world, rom):
     containers = world.random.randint(1, 5)
@@ -449,6 +507,7 @@ def patch_rom(world, rom, player: int):
     randomize_enemy_health(world, rom)
     randomize_enemy_other_attributes(world, rom)
     randomize_attack_effectiveness(world, rom)
+    randomize_magic_cost(world, rom)
     randomize_life_spell_amount(world, rom)
     randomize_enemies(world, rom)
     alter_encounter_table(world, rom)
