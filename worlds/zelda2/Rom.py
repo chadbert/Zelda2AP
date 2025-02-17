@@ -11,6 +11,7 @@ from logging import warning
 
 from .game_data import world_version, enemy_health, enemy_attribute_tables, enemy_encounter_tables
 from .Options import DropTable, EncounterRate
+from ..yachtdice.Locations import starting_index
 
 if TYPE_CHECKING:
     from . import Z2World
@@ -291,7 +292,7 @@ def randomize_spell_cost(world, costs: []):
         low_part = cost & 0x0F
         actual_cost = high_part * 8 + low_part / 2
 
-        min_cost = actual_cost - round(actual_cost * 0.25)
+        min_cost = actual_cost - round(actual_cost * 0.5)
         max_cost = actual_cost + round(actual_cost * 0.5)
 
         new_cost = world.random.randint(min_cost, min(max_cost, 120))
@@ -336,13 +337,13 @@ def randomize_enemies(world, rom):
     print(len(west_enemy_encounter_bank1))
 
     current_index = 0
-
-    for encounter_index in range(25):
+    previous_index = 0
+    for encounter_index in range(112):
         num_bytes = west_enemy_encounter_bank1[current_index]
         print("number of bytes: ", num_bytes)
         current_index += 2
 
-        for enemy_index in range(floor(num_bytes / 2)):
+        for enemy_index in range(floor(num_bytes / 2) - 1):
             enemy = west_enemy_encounter_bank1[current_index] & 0x3F
             high_part = west_enemy_encounter_bank1[current_index] & 0xC0
 
@@ -382,7 +383,10 @@ def randomize_enemies(world, rom):
 
             current_index += 2
 
+        current_index = previous_index + num_bytes
         print("current index: ", current_index)
+        previous_index = current_index
+
 
     print("New encounter table")
     print(west_enemy_encounter_bank1)
