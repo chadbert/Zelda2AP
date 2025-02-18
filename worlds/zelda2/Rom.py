@@ -9,6 +9,7 @@ from worlds.Files import APProcedurePatch, APTokenMixin, APTokenTypes, APPatchEx
 from typing import TYPE_CHECKING, Optional
 from logging import warning
 
+from .Enemies import *
 from .game_data import world_version, enemy_health, enemy_attribute_tables, enemy_encounter_tables
 from .Options import DropTable, EncounterRate
 from ..yachtdice.Locations import starting_index
@@ -64,14 +65,18 @@ def randomize_drop_table(world, rom):
     if world.options.drop_table == DropTable.option_vanilla:
         return
 
+    # Randomize enemy count between drops
+    enemy_count = 4 + world.random.randint(0, 4)
+    rom.write_bytes(0x1E8B0, bytearray([enemy_count]))
+
     blue_jar = 0x90
     red_jar = 0x91
     pbag_50 = 0x8a
     pbag_100 = 0x8b
     pbag_200 = 0x8c
     pbag_500 = 0x8d
-    # "1up": 0x92, # does not work yet
-    # "key": 0x88 # does not work yet
+    # "1up": 0x92, # does not work
+    # "key": 0x88 # does not work
 
     possible_drops = [
         red_jar,
@@ -290,7 +295,7 @@ def randomize_spell_cost(world, costs: []):
         cost = costs[i]
         high_part = (cost & 0xF0) >> 4
         low_part = cost & 0x0F
-        actual_cost = high_part * 8 + low_part / 2
+        actual_cost = floor(high_part * 8 + low_part / 2)
 
         min_cost = actual_cost - round(actual_cost * 0.5)
         max_cost = actual_cost + round(actual_cost * 0.5)
@@ -307,6 +312,75 @@ def randomize_spell_cost(world, costs: []):
         print("vanilla ", actual_cost, " new cost ", new_cost, "mem_value", costs[i])
         previous_cost = new_cost
 
+def randomize_experience_requirements(world, rom):
+
+    attack = [200, 500, 1000, 2000, 3000, 5000, 8000, 9000]
+    magic = [100, 300, 700, 1200, 2200, 3500, 6000, 9000]
+    life = [50, 150, 400, 800, 1500, 2500, 4000, 9000]
+
+    randomize_exp_internal(world, rom, attack)
+    randomize_exp_internal(world, rom, magic)
+    randomize_exp_internal(world, rom, life)
+    print("attack exp requirements ", attack)
+    print("magic exp requirements ", magic)
+    print("life exp requirements ", life)
+
+    write_exp_internal(rom, attack, 0x1669)
+    write_exp_internal(rom, magic, 0x1671)
+    write_exp_internal(rom, life, 0x1679)
+
+
+def write_exp_internal(rom, values: [], address):
+    low_bytes = []
+    high_bytes = []
+    for i in range(len(values)):
+        low_bytes.append(values[i] % 256)
+        high_bytes.append(int(values[i] / 256))
+
+    rom.write_bytes(address, bytearray(high_bytes))
+    rom.write_bytes(address + 24, bytearray(low_bytes))
+
+    # Update display text
+    zero = 0xD0 # First character value
+    blank = 0xF4
+    tens_offset = 0x7D9
+    hundreds_offset = 0x7F1
+    thousands_offset = 0x809
+    thousands = []
+    hundreds = []
+    tens = []
+    for i in range(len(values)):
+        if (values[i] < 1000):
+            thousands.append(blank)
+        else:
+            thousands.append(int(values[i] / 1000) + zero)
+        if (values[i] < 100):
+            hundreds.append(blank)
+        else:
+            hundreds.append(int((values[i] % 1000) / 100) + zero)
+        tens.append(int((values[i] % 100) / 10) + zero)
+    print("1000s ", bytearray(thousands))
+    print(" 100s ", bytearray(hundreds))
+    print("  10s ", bytearray(tens))
+
+    rom.write_bytes(address + tens_offset, bytearray(tens))
+    rom.write_bytes(address + hundreds_offset, bytearray(hundreds))
+    rom.write_bytes(address + thousands_offset, bytearray(thousands))
+
+def randomize_exp_internal(world, rom, values: []):
+    for i in range(len(values)):
+        min_value = values[i] - round(values[i] * .25)
+        max_value = values[i] + round(values[i] * .25)
+
+        new_value = world.random.randint(min_value, max_value - 1)
+
+        # make it only a multiple of 10 as the last 0 displayed cannot be changed
+        new_value = floor(new_value / 10) * 10
+        if new_value > 9999:
+            new_value = 9999
+        
+        values[i] = new_value
+
 
 def randomize_life_spell_amount(world, rom):
     containers = world.random.randint(1, 5)
@@ -316,70 +390,152 @@ def randomize_life_spell_amount(world, rom):
     rom.write_bytes(0xE7A, bytearray([hp]))
 
 def randomize_enemies(world, rom):
-    moa = 0x06
-    ache = 0x07  # keese or bats
-    acheman = 0x0A
-    red_deeler = 0x0D
-    blue_deeler = 0x0E
-    geldarm = 0x20  # beanstalk
-    megmet = 0x1F  # bouncy cat
-    flying_enemies = [moa, ache, acheman, red_deeler, blue_deeler]
-    generators = [0x0B, 0x0C, 0x0F, 0x1D]
-    small_enemies = [0x03, 0x04, 0x05, 0x11, 0x12, 0x1C, megmet]
-    large_enemies = [geldarm, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B]
+    west_flying_enemies = [moa, ache, acheman, red_deeler, blue_deeler]
+    west_generators = [0x0B, 0x0C, 0x0F, 0x1D]
+    west_small_enemies = [0x03, 0x04, 0x05, 0x11, 0x12, 0x1C, megmet]
+    west_large_enemies = [geldarm, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B]
+
+    west_enemy_encounter_bank = enemy_encounter_tables["bank1"].copy()
+    randomize_overworld_enemies(world, 112, west_enemy_encounter_bank, west_small_enemies, west_large_enemies,
+                                west_flying_enemies, west_generators)
+    rom.write_bytes(0x48B2, bytearray(west_enemy_encounter_bank))
+
+    east_flying_enemies = [moa, ache, acheman, red_deeler, blue_deeler, 0x15]
+    east_generators = [0x0B, 0x0F, 0x17]
+    east_small_enemies = [0x03, 0x04, 0x05, 0x11, 0x12, 0x16]
+    east_large_enemies = [0x14, 0x18, 0x19, 0x1A, 0x1B, 0x1C]
+    east_enemy_encounter_bank = enemy_encounter_tables["bank2"].copy()
+    randomize_overworld_enemies(world, 126, east_enemy_encounter_bank, east_small_enemies,
+                                east_large_enemies, east_flying_enemies, east_generators)
+    rom.write_bytes(0x88B0, bytearray(east_enemy_encounter_bank))
+
+    #108b0
+    palace125_flying_enemies = [moa, blue_deeler]
+    palace125_generators = [0x0B, 0x0F, 0x1B, 0x0A]
+    palace125_small_enemies = [0x03, 0x04, 0x11, 0x12]
+    palace125_large_enemies = [0x0C, 0x18, 0x19, 0x1A, 0x1D, 0x1E, 0x1F, 0x23]
+    palace_enemy_bank = enemy_encounter_tables["palaces"].copy()
+    randomize_palace_enemies(world, 123, palace_enemy_bank, palace125_small_enemies, palace125_large_enemies,
+                             palace125_flying_enemies, palace125_generators)
+    rom.write_bytes(0x108B0, bytearray(palace_enemy_bank))
+
+    #palace346_flying_enemies = palace125_generators
+    #palace346_generators = [0x0B, 0x0F, 0x1B]
+    #palace346_small_enemies = [0x03, 0x04, 0x11]
+    #palace346_large_enemies = [0x0C, 0x18, 0x19, 0x1A, 0x1D, 0x1F, 0x1E, 0x23]
+
+    gp_flying_enemies = [0x06, 0x14, 0x15, 0x17, 0x1E]
+    gp_generators = [0x0B, 0x0C, 0x0F, 0x16]
+    gp_small_enemies = [0x03, 0x04, 0x11, 0x12]
+    gp_large_enemies = [0x18, 0x19, 0x1A, 0x1D]
+
+def randomize_palace_enemies(world, room_count, encounter_bank: [], small_enemies: [], large_enemies: [], flying_enemies: [], generators: []):
+    print("byte count", len(encounter_bank))
     small_and_large_enemies = small_enemies + large_enemies
-    print(bytearray(small_and_large_enemies))
-    enemy_addr = 0x48B0
-    enemy_ptr = 0x45B1
-
-    west_enemy_encounter_bank1 = enemy_encounter_tables["bank1"].copy()
-
-    print(len(west_enemy_encounter_bank1))
 
     current_index = 0
     previous_index = 0
-    for encounter_index in range(112):
-        num_bytes = west_enemy_encounter_bank1[current_index]
+    for encounter_index in range(room_count):
+        num_bytes = encounter_bank[current_index]
+        print("number of bytes: ", num_bytes)
+        current_index += 2
+        first_generator = 0x0
+
+        for enemy_index in range(floor(num_bytes / 2) - 1):
+            enemy = encounter_bank[current_index] & 0x3F
+            page_number = encounter_bank[current_index] & 0xC0
+
+            # mixing small and large
+            if enemy in small_and_large_enemies:
+                new_enemy_index = world.random.randint(0, len(small_and_large_enemies) - 1)
+                new_enemy = small_and_large_enemies[new_enemy_index]
+                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                encounter_bank[current_index] = new_enemy + page_number
+
+                if enemy in small_enemies and new_enemy in large_enemies:
+                    new_position = move_y_position(encounter_bank[current_index - 1], -16)
+                    encounter_bank[current_index - 1] = new_position
+
+            elif enemy in flying_enemies:
+                new_enemy_index = world.random.randint(0, len(flying_enemies) - 1)
+                new_enemy = flying_enemies[new_enemy_index]
+                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                encounter_bank[current_index] = new_enemy + page_number
+
+            elif enemy in generators:
+                new_enemy_index = world.random.randint(0, len(generators) - 1)
+                new_enemy = generators[new_enemy_index]
+
+                if first_generator != 0x0:
+                    new_enemy = first_generator
+
+                first_generator = new_enemy
+
+                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                encounter_bank[current_index] = new_enemy + page_number
+
+            current_index += 2
+
+        current_index = previous_index + num_bytes
+        print("current index: ", current_index)
+        previous_index = current_index
+
+    print("New encounter table")
+    print(bytearray(encounter_bank))
+    for i in range(len(encounter_bank)):
+        if encounter_bank[i] > 255 or encounter_bank[i] < 0:
+            print("index ", i, " is out of range: ", encounter_bank[i])
+
+
+def randomize_overworld_enemies(world, encounter_count, encounter_bank: [], small_enemies: [], large_enemies: [], flying_enemies: [], generators: []):
+    small_and_large_enemies = small_enemies + large_enemies
+
+    print("byte count", len(encounter_bank))
+
+    current_index = 0
+    previous_index = 0
+    for encounter_index in range(encounter_count):
+        num_bytes = encounter_bank[current_index]
         print("number of bytes: ", num_bytes)
         current_index += 2
 
         for enemy_index in range(floor(num_bytes / 2) - 1):
-            enemy = west_enemy_encounter_bank1[current_index] & 0x3F
-            high_part = west_enemy_encounter_bank1[current_index] & 0xC0
+            enemy = encounter_bank[current_index] & 0x3F
+            page_number = encounter_bank[current_index] & 0xC0
 
             #mixing small and large
             if enemy in small_and_large_enemies:
                 new_enemy_index = world.random.randint(0, len(small_and_large_enemies) - 1)
                 new_enemy = small_and_large_enemies[new_enemy_index]
                 print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
-                west_enemy_encounter_bank1[current_index] = new_enemy + high_part
+                encounter_bank[current_index] = new_enemy + page_number
 
                 if enemy in small_enemies and new_enemy in large_enemies and new_enemy != geldarm:
-                    new_position = move_y_position(west_enemy_encounter_bank1[current_index - 1], -32)
-                    west_enemy_encounter_bank1[current_index - 1] = new_position
+                    new_position = move_y_position(encounter_bank[current_index - 1], -32)
+                    encounter_bank[current_index - 1] = new_position
                 elif new_enemy == geldarm and enemy != geldarm:
-                    new_position = move_y_position(west_enemy_encounter_bank1[current_index - 1], -48)
-                    west_enemy_encounter_bank1[current_index - 1] = new_position
+                    new_position = move_y_position(encounter_bank[current_index - 1], -48)
+                    encounter_bank[current_index - 1] = new_position
                 elif new_enemy == megmet and enemy != megmet:
-                    new_position = move_y_position(west_enemy_encounter_bank1[current_index - 1], -16)
-                    west_enemy_encounter_bank1[current_index - 1] = new_position
+                    new_position = move_y_position(encounter_bank[current_index - 1], -16)
+                    encounter_bank[current_index - 1] = new_position
 
             elif enemy in flying_enemies:
                 new_enemy_index = world.random.randint(0, len(flying_enemies) - 1)
                 new_enemy = flying_enemies[new_enemy_index]
                 print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
-                west_enemy_encounter_bank1[current_index] = new_enemy + high_part
+                encounter_bank[current_index] = new_enemy + page_number
 
                 if new_enemy in [ache, acheman, red_deeler, blue_deeler]:
                     y_pos = 0
-                    x_pos = west_enemy_encounter_bank1[current_index - 1] & 0x0F
-                    west_enemy_encounter_bank1[current_index - 1] = y_pos + x_pos
+                    x_pos = encounter_bank[current_index - 1] & 0x0F
+                    encounter_bank[current_index - 1] = y_pos + x_pos
 
             elif enemy in generators:
                 new_enemy_index = world.random.randint(0, len(generators) - 1)
                 new_enemy = generators[new_enemy_index]
                 print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
-                west_enemy_encounter_bank1[current_index] = new_enemy + high_part
+                encounter_bank[current_index] = new_enemy + page_number
 
             current_index += 2
 
@@ -389,11 +545,11 @@ def randomize_enemies(world, rom):
 
 
     print("New encounter table")
-    print(west_enemy_encounter_bank1)
-    for i in range(len(west_enemy_encounter_bank1)):
-        if west_enemy_encounter_bank1[i] > 255 or west_enemy_encounter_bank1[i] < 0:
-            print("index ", i, " is out of range: ", west_enemy_encounter_bank1[i])
-    rom.write_bytes(0x48B2, bytearray(west_enemy_encounter_bank1))
+    print(bytearray(encounter_bank))
+    for i in range(len(encounter_bank)):
+        if encounter_bank[i] > 255 or encounter_bank[i] < 0:
+            print("index ", i, " is out of range: ", encounter_bank[i])
+
 
 def move_y_position(position_byte, y_position_delta):
     y_pos = position_byte & 0xF0
@@ -515,6 +671,7 @@ def patch_rom(world, rom, player: int):
     randomize_life_spell_amount(world, rom)
     randomize_enemies(world, rom)
     alter_encounter_table(world, rom)
+    randomize_experience_requirements(world, rom)
 
     #rom.write_bytes(0x48B0, bytearray([0x01, 0x01, 0x03, 0x7A, 0x52, 0x01, 0x0B, 0x6F, 0x05, 0x72, 0x45, 0x75, 0x5C, 0x7A, 0x5F, 0x77, 0x95, 0x01, 0x0B]))
     #rom.write_bytes(0x4959, bytearray([0x0F]))
