@@ -134,6 +134,16 @@ class RandomizeWhichEnemiesRequireFire(Toggle):
     """Randomizes which enemies that are immune to swords on East continent and Maze Island"""
     display_name = "Randomize Which Enemies Require Fire"
 
+class Enemizer(Choice):
+    """Vanilla: No enemizer, vanilla enemies in all encounters
+       Simple: Shuffles enemies by type keeping small enemies separate from large enemies
+       Mixed: Shuffles small and large enemies together"""
+    display_name = "Enemizer"
+    option_vanilla = 0
+    option_simple = 1
+    option_mixed = 2
+    default = 0
+
 class RandomPalaceGraphics(Toggle):
     """Randomizes the color and tiles of each Palace except the Great Palace."""
     display_name = "Random Palace Graphics"
@@ -186,6 +196,7 @@ class Z2Options(PerGameCommonOptions):
     randomize_attack_effectiveness: RandomizeAttackEffectiveness
     starting_lives: StartingLives
     encounter_rate: EncounterRate
+    enemizer: Enemizer
     randomize_enemy_health: RandomizeEnemyHealth
     randomize_enemy_xp_rewards: RandomizeEnemyXpRewards
     randomize_enemies_that_steal_xp: RandomizeEnemiesThatStealXp

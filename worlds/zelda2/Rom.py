@@ -11,8 +11,7 @@ from logging import warning
 
 from .Enemies import *
 from .game_data import world_version, enemy_health, enemy_attribute_tables, enemy_encounter_tables
-from .Options import DropTable, EncounterRate
-from ..yachtdice.Locations import starting_index
+from .Options import DropTable, EncounterRate, Enemizer
 
 if TYPE_CHECKING:
     from . import Z2World
@@ -120,23 +119,34 @@ def randomize_enemy_health(world, rom):
 
     enemy_health_pool_bank1 = enemy_health["bank1"].copy()
     enemy_health_pool_bank2 = enemy_health["bank2"].copy()
+    enemy_health_pool_bank4_0 = enemy_health["bank4_0"].copy()
+    enemy_health_pool_bank4_1 = enemy_health["bank4_1"].copy()
+    enemy_health_pool_helmethead_gooma = enemy_health["bank4_helm_gooma"].copy()
+    enemy_health_pool_bank5 = enemy_health["bank5"].copy()
 
     new_enemy_health_pool_bank1 = randomize_values(world, enemy_health_pool_bank1)
     rom.write_bytes(0x5434, bytearray(new_enemy_health_pool_bank1))
 
     new_enemy_health_pool_bank2 = randomize_values(world, enemy_health_pool_bank2)
     rom.write_bytes(0x9434, bytearray(new_enemy_health_pool_bank2))
-    #randomize_enemy_health_internal(world, rom, 0x5434, 0x5453)
-    #randomize_enemy_health_internal(world, rom, 0x9434, 0x944E)
-    #randomize_enemy_health_internal(world, rom, 0x11435, 0x11435)
-    #randomize_enemy_health_internal(world, rom, 0x11437, 0x11454)
-    #randomize_enemy_health_internal(world, rom, 0x13C86, 0x13C87)
-    #randomize_enemy_health_internal(world, rom, 0x15434, 0x15438)
-    #randomize_enemy_health_internal(world, rom, 0x15440, 0x15443)
-    #randomize_enemy_health_internal(world, rom, 0x15445, 0x1544B)
-    #randomize_enemy_health_internal(world, rom, 0x1544E, 0x1544E)
-    #randomize_enemy_health_internal(world, rom, 0x12935, 0x12935)
-    #randomize_enemy_health_internal(world, rom, 0x12937, 0x12954)
+
+    new_enemy_health_pool_bank4_0 = randomize_values(world, enemy_health_pool_bank4_0)
+    rom.write_bytes(0x11434, bytearray(new_enemy_health_pool_bank4_0))
+
+    new_enemy_health_pool_bank4_1 = randomize_values(world, enemy_health_pool_bank4_1)
+    enemy_health_pool_bank4_1[1] = 0xFF
+    rom.write_bytes(0x12935, bytearray(new_enemy_health_pool_bank4_1))
+
+    enemy_health_pool_helmethead_gooma = randomize_values(world, enemy_health_pool_helmethead_gooma)
+    rom.write_bytes(0x13C86, bytearray(enemy_health_pool_helmethead_gooma))
+
+    new_enemy_health_pool_bank5 = randomize_values(world, enemy_health_pool_bank5)
+    # Fix issues
+    new_enemy_health_pool_bank5[2] = 0x00
+    new_enemy_health_pool_bank5[13] = 0x00
+    new_enemy_health_pool_bank5[21] = 0x00
+    new_enemy_health_pool_bank5[22] = 0x02
+    rom.write_bytes(0x15434, bytearray(new_enemy_health_pool_bank5))
 
 def randomize_enemy_other_attributes(world, rom):
     if not world.options.randomize_enemy_xp_rewards and \
@@ -152,22 +162,70 @@ def randomize_enemy_other_attributes(world, rom):
 
     # bank1 is Western continent
     # bank2 is Eastern and Maze Island
+    # bank3 is towns
+    # bank4 is palaces
+    # bank5 is GP
     enemy_attributes_bank1 = enemy_attribute_tables["bank1"].copy()
     enemy_attributes_bank2 = enemy_attribute_tables["bank2"].copy()
+    enemy_attributes_bank4_0 = enemy_attribute_tables["bank4_0"].copy()
+    enemy_attributes_bank4_1 = enemy_attribute_tables["bank4_1"].copy()
+    helmethead_gooma = [0xCB, 0xCD]
+    enemy_attributes_bank5 = enemy_attribute_tables["bank5"].copy()
 
     randomize_experience_stealing(world, enemy_attributes_bank1, 5)
     randomize_experience_stealing(world, enemy_attributes_bank2, 5)
+    randomize_experience_stealing(world, enemy_attributes_bank4_0, 3)
+    randomize_experience_stealing(world, enemy_attributes_bank4_1, 3)
+    randomize_experience_stealing(world, enemy_attributes_bank5, 2)
+
+    randomize_sword_immunity(world, enemy_attributes_bank2, 4)
 
     randomize_enemy_exp_in_bank(world, enemy_attributes_bank1)
     randomize_enemy_exp_in_bank(world, enemy_attributes_bank2)
+    randomize_enemy_exp_in_bank(world, enemy_attributes_bank4_0)
+    randomize_enemy_exp_in_bank(world, enemy_attributes_bank4_1)
+    randomize_enemy_exp_in_bank(world, helmethead_gooma)
+    randomize_enemy_exp_in_bank(world, enemy_attributes_bank5)
 
     # Preventing crashes and strange bugs
+    enemy_attributes_bank2[16] = enemy_attribute_tables["bank1"][16] # Elevator
+
     enemy_attributes_bank1[2] = 0x40 # Don't want doors stealing experience
     enemy_attributes_bank1[6] = 0x90 # unknown enemy that likely should not be changed
     enemy_attributes_bank1[16] = 0x40 # Don't want to break elevators
 
+    enemy_attributes_bank4_0[2] = enemy_attribute_tables["bank4_0"][2] # hidden red jar
+    enemy_attributes_bank4_0[5] = enemy_attribute_tables["bank4_0"][5] # falling block generator
+    enemy_attributes_bank4_0[6] = enemy_attribute_tables["bank4_0"][6] # falling block
+    enemy_attributes_bank4_0[16] = enemy_attribute_tables["bank4_0"][16] # Elevator
+    enemy_attributes_bank4_0[17] = enemy_attribute_tables["bank4_0"][17] # Crystal slot
+    enemy_attributes_bank4_0[18] = enemy_attribute_tables["bank4_0"][18] # Crystal
+    enemy_attributes_bank4_0[19] = enemy_attribute_tables["bank4_0"][19] # Energy ball shooter
+    enemy_attributes_bank4_0[20] = enemy_attribute_tables["bank4_0"][20] # Energy ball shooter
+    enemy_attributes_bank4_0[29] &= 0xEF # Horsehead - still randomize exp
+    enemy_attributes_bank4_0[30] = enemy_attribute_tables["bank4_0"][30] # helmethead / Gooma - still randomize exp
+    enemy_attributes_bank4_0[31] = enemy_attribute_tables["bank4_0"][31] # Floating helmet
+
+    enemy_attributes_bank4_1[2] = enemy_attribute_tables["bank4_1"][2]  # hidden red jar
+    enemy_attributes_bank4_1[5] = enemy_attribute_tables["bank4_1"][5]  # falling block generator
+    enemy_attributes_bank4_1[6] = enemy_attribute_tables["bank4_1"][6]  # falling block
+    enemy_attributes_bank4_1[11] = enemy_attribute_tables["bank4_1"][11]  # Fast bubble?
+    enemy_attributes_bank4_1[15] = enemy_attribute_tables["bank4_1"][15]  # Crash
+    enemy_attributes_bank4_1[16] = enemy_attribute_tables["bank4_1"][16]  # Elevator
+    enemy_attributes_bank4_1[17] = enemy_attribute_tables["bank4_1"][17]  # Crystal slot
+    enemy_attributes_bank4_1[18] = enemy_attribute_tables["bank4_1"][18]  # Crystal
+    enemy_attributes_bank4_1[19] = enemy_attribute_tables["bank4_1"][19]  # Energy ball shooter
+    enemy_attributes_bank4_1[20] = enemy_attribute_tables["bank4_1"][20]  # Energy ball shooter
+    enemy_attributes_bank4_1[29] &= 0xEF  # Rebonack - still randomize exp
+    enemy_attributes_bank4_1[30] &= 0xEF  # Barba - still randomize exp
+    enemy_attributes_bank4_1[31] &= 0xEF  # Carock - still randomize exp
+
+    # write attributes
     rom.write_bytes(0x54E8, bytearray(enemy_attributes_bank1))
     rom.write_bytes(0x94e8, bytearray(enemy_attributes_bank2))
+    rom.write_bytes(0x114E8, bytearray(enemy_attributes_bank4_0))
+    rom.write_bytes(0x129E8, bytearray(enemy_attributes_bank4_1))
+    rom.write_bytes(0x13C88, bytearray(helmethead_gooma))
 
 def randomize_experience_stealing(world, enemy_attribute_bank: [], max_number: int):
     if not world.options.randomize_enemies_that_steal_xp:
@@ -182,8 +240,21 @@ def randomize_experience_stealing(world, enemy_attribute_bank: [], max_number: i
     for i in range(max_number):
         new_enemy = world.random.randint(0, len(enemy_attribute_bank) - 1)
         print(new_enemy)
-        if (new_enemy != 16):  # 16 is an elevator
-            enemy_attribute_bank[new_enemy] = enemy_attribute_bank[new_enemy] | 0x10
+        enemy_attribute_bank[new_enemy] = enemy_attribute_bank[new_enemy] | 0x10
+
+    return enemy_attribute_bank
+
+def randomize_sword_immunity(world, enemy_attribute_bank: [], max_number: int):
+    if not world.options.randomize_which_enemies_require_fire:
+        return
+
+    # Remove sword immunity from all enemies
+    for i in range(len(enemy_attribute_bank)):
+        enemy_attribute_bank[i] = enemy_attribute_bank[i] & 0xDF
+
+    for i in range(max_number):
+        new_enemy = world.random.randint(0, len(enemy_attribute_bank) - 1)
+        enemy_attribute_bank[new_enemy] = enemy_attribute_bank[new_enemy] | 0x20
 
     return enemy_attribute_bank
 
@@ -206,10 +277,20 @@ def randomize_enemy_exp_in_bank(world, enemy_attribute_bank: []):
 def randomize_values(world, input_values: []):
     new_values = []
     for value in input_values:
+        if value == 0:
+            continue
         min_value = value - round(value * 0.5)
         max_value = value + round(value * 0.5)
-        print(min_value, max_value);
-        new_values.append(world.random.randint(min_value, max_value))
+
+        new_value = world.random.randint(min_value, max_value)
+        print("Enemy: ", value, min_value, max_value)
+        if new_value > 0xFF:
+            print("limiting value to 0xFF")
+            new_value = 0xFF
+        elif new_value > max_value:
+            print("underflow happened", value, min_value, max_value)
+            new_value = 0x01
+        new_values.append(new_value)
 
     return new_values
 
@@ -249,10 +330,10 @@ def randomize_attack_effectiveness(world, rom):
         previous = new_attack
         new_values.append(new_attack)
 
-    print('vanilla attack effectiveness: ')
-    print(bytearray(vanilla_values))
-    print('Random attack effectiveness: ')
-    print(bytearray(new_values))
+    #print('vanilla attack effectiveness: ')
+    #print(bytearray(vanilla_values))
+    #print('Random attack effectiveness: ')
+    #print(bytearray(new_values))
     rom.write_bytes(0x1E67D, bytearray(new_values))
     
 def randomize_magic_cost(world, rom):
@@ -269,7 +350,7 @@ def randomize_magic_cost(world, rom):
     spell_costs = [0xF0, 0xE0, 0xC0, 0xA0, 0x60, 0x40, 0x30, 0x20]
     thunder_costs = [0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xF0, 0xC8, 0x80]
 
-    print("shield")
+    #print("shield")
     randomize_spell_cost(world, shield_costs)
     randomize_spell_cost(world, jump_costs)
     randomize_spell_cost(world, life_costs)
@@ -302,14 +383,14 @@ def randomize_spell_cost(world, costs: []):
 
         new_cost = world.random.randint(min_cost, min(max_cost, 120))
         if new_cost > previous_cost:
-            print("new cost is greater than previous cost", new_cost, previous_cost)
+            #print("new cost is greater than previous cost", new_cost, previous_cost)
             new_cost = previous_cost
 
         high_part = floor(new_cost / 8) << 4
         low_part = new_cost % 8
         costs[i] = high_part + (low_part * 2)
 
-        print("vanilla ", actual_cost, " new cost ", new_cost, "mem_value", costs[i])
+        #print("vanilla ", actual_cost, " new cost ", new_cost, "mem_value", costs[i])
         previous_cost = new_cost
 
 def randomize_experience_requirements(world, rom):
@@ -321,9 +402,9 @@ def randomize_experience_requirements(world, rom):
     randomize_exp_internal(world, rom, attack)
     randomize_exp_internal(world, rom, magic)
     randomize_exp_internal(world, rom, life)
-    print("attack exp requirements ", attack)
-    print("magic exp requirements ", magic)
-    print("life exp requirements ", life)
+    #print("attack exp requirements ", attack)
+    #print("magic exp requirements ", magic)
+    #print("life exp requirements ", life)
 
     write_exp_internal(rom, attack, 0x1669)
     write_exp_internal(rom, magic, 0x1671)
@@ -359,9 +440,9 @@ def write_exp_internal(rom, values: [], address):
         else:
             hundreds.append(int((values[i] % 1000) / 100) + zero)
         tens.append(int((values[i] % 100) / 10) + zero)
-    print("1000s ", bytearray(thousands))
-    print(" 100s ", bytearray(hundreds))
-    print("  10s ", bytearray(tens))
+    #print("1000s ", bytearray(thousands))
+    #print(" 100s ", bytearray(hundreds))
+    #print("  10s ", bytearray(tens))
 
     rom.write_bytes(address + tens_offset, bytearray(tens))
     rom.write_bytes(address + hundreds_offset, bytearray(hundreds))
@@ -385,11 +466,14 @@ def randomize_exp_internal(world, rom, values: []):
 def randomize_life_spell_amount(world, rom):
     containers = world.random.randint(1, 5)
     hp = containers * 16
-    print("Life spell effectiveness: ", hp)
+    #print("Life spell effectiveness: ", hp)
     # TODO configure this
     rom.write_bytes(0xE7A, bytearray([hp]))
 
-def randomize_enemies(world, rom):
+def shuffle_enemies(world, rom):
+    if world.options.enemizer == Enemizer.option_vanilla:
+        return
+
     west_flying_enemies = [moa, ache, acheman, red_deeler, blue_deeler]
     west_generators = [0x0B, 0x0C, 0x0F, 0x1D]
     west_small_enemies = [0x03, 0x04, 0x05, 0x11, 0x12, 0x1C, megmet]
@@ -411,18 +495,22 @@ def randomize_enemies(world, rom):
 
     #108b0
     palace125_flying_enemies = [moa, blue_deeler]
-    palace125_generators = [0x0B, 0x0F, 0x1B, 0x0A]
-    palace125_small_enemies = [0x03, 0x04, 0x11, 0x12]
+    palace125_generators = [0x0B, 0x0F, 0x1B] #0x0A - causes scroll lock
+    palace125_small_enemies = [0x03, 0x04, 0x11] #0x12 - causes crash
     palace125_large_enemies = [0x0C, 0x18, 0x19, 0x1A, 0x1D, 0x1E, 0x1F, 0x23]
     palace_enemy_bank = enemy_encounter_tables["palaces"].copy()
     randomize_palace_enemies(world, 123, palace_enemy_bank, palace125_small_enemies, palace125_large_enemies,
                              palace125_flying_enemies, palace125_generators)
     rom.write_bytes(0x108B0, bytearray(palace_enemy_bank))
 
-    #palace346_flying_enemies = palace125_generators
-    #palace346_generators = [0x0B, 0x0F, 0x1B]
-    #palace346_small_enemies = [0x03, 0x04, 0x11]
-    #palace346_large_enemies = [0x0C, 0x18, 0x19, 0x1A, 0x1D, 0x1F, 0x1E, 0x23]
+    # Randomizes dripper
+    palace125_enemies = palace125_small_enemies + palace125_large_enemies
+    dripper_index = world.random.randint(0, len(palace125_enemies) - 1)
+    #rom.write_bytes(0x11927, bytearray(palace125_enemies[dripper_index]))
+
+    possible_spell_enemies = [0x3, 0x4, moa, ache, blue_deeler, 0x10, 0x11, 0x12, 0x18, 0x19, 0x1A]
+    spell_enemy_index = world.random.randint(0, len(possible_spell_enemies) - 1)
+    #rom.write_bytes(0x11EF, bytearray(possible_spell_enemies[spell_enemy_index]))
 
     gp_flying_enemies = [0x06, 0x14, 0x15, 0x17, 0x1E]
     gp_generators = [0x0B, 0x0C, 0x0F, 0x16]
@@ -471,7 +559,7 @@ def randomize_palace_enemies(world, room_count, encounter_bank: [], small_enemie
 
                 first_generator = new_enemy
 
-                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                print("old generator: ", bytearray([enemy]), "new generator: ", bytearray([new_enemy]))
                 encounter_bank[current_index] = new_enemy + page_number
 
             current_index += 2
@@ -480,8 +568,8 @@ def randomize_palace_enemies(world, room_count, encounter_bank: [], small_enemie
         print("current index: ", current_index)
         previous_index = current_index
 
-    print("New encounter table")
-    print(bytearray(encounter_bank))
+    #print("New encounter table")
+    #print(bytearray(encounter_bank))
     for i in range(len(encounter_bank)):
         if encounter_bank[i] > 255 or encounter_bank[i] < 0:
             print("index ", i, " is out of range: ", encounter_bank[i])
@@ -544,8 +632,8 @@ def randomize_overworld_enemies(world, encounter_count, encounter_bank: [], smal
         previous_index = current_index
 
 
-    print("New encounter table")
-    print(bytearray(encounter_bank))
+    #print("New encounter table")
+    #print(bytearray(encounter_bank))
     for i in range(len(encounter_bank)):
         if encounter_bank[i] > 255 or encounter_bank[i] < 0:
             print("index ", i, " is out of range: ", encounter_bank[i])
@@ -669,7 +757,7 @@ def patch_rom(world, rom, player: int):
     randomize_attack_effectiveness(world, rom)
     randomize_magic_cost(world, rom)
     randomize_life_spell_amount(world, rom)
-    randomize_enemies(world, rom)
+    shuffle_enemies(world, rom)
     alter_encounter_table(world, rom)
     randomize_experience_requirements(world, rom)
 
