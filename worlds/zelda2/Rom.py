@@ -265,9 +265,19 @@ def randomize_enemy_exp_in_bank(world, enemy_attribute_bank: []):
     print("experience codes")
     for i in range(len(enemy_attribute_bank)):
         exp_code = enemy_attribute_bank[i] & 0x0F
-        min_exp_code = round(exp_code - exp_code * 0.5)
-        max_exp_code = round(exp_code + exp_code * 0.5)
+        if exp_code == 0:
+            continue
+
+        min_exp_code = exp_code - 2
+        max_exp_code = exp_code + 2
+
+        if exp_code < 6:
+            min_exp_code = exp_code - 1
+            max_exp_code = exp_code + 1
+
         new_exp_code = world.random.randint(min_exp_code, max_exp_code)
+        if new_exp_code > 0xF:
+            new_exp_code = 0xF
 
         enemy_attribute_bank[i] = (enemy_attribute_bank[i] & 0xF0) | new_exp_code
         print(exp_code, min_exp_code, max_exp_code, new_exp_code, enemy_attribute_bank[i])
@@ -278,12 +288,13 @@ def randomize_values(world, input_values: []):
     new_values = []
     for value in input_values:
         if value == 0:
+            new_values.append(0)
             continue
         min_value = value - round(value * 0.5)
         max_value = value + round(value * 0.5)
 
         new_value = world.random.randint(min_value, max_value)
-        print("Enemy: ", value, min_value, max_value)
+        print("Enemy: ", value, min_value, max_value, new_value)
         if new_value > 0xFF:
             print("limiting value to 0xFF")
             new_value = 0xFF
@@ -506,11 +517,19 @@ def shuffle_enemies(world, rom):
     # Randomizes dripper
     palace125_enemies = palace125_small_enemies + palace125_large_enemies
     dripper_index = world.random.randint(0, len(palace125_enemies) - 1)
-    #rom.write_bytes(0x11927, bytearray(palace125_enemies[dripper_index]))
+    dripper_enemy = palace125_enemies[dripper_index]
+    print('randomizing drippers')
+    print(bytearray(palace125_enemies))
+    print(dripper_index)
+    print(bytearray([dripper_enemy]), dripper_enemy)
+    rom.write_bytes(0x11927, bytearray([dripper_enemy]))
 
     possible_spell_enemies = [0x3, 0x4, moa, ache, blue_deeler, 0x10, 0x11, 0x12, 0x18, 0x19, 0x1A]
+    print('spell enemies')
+    print(bytearray(possible_spell_enemies))
     spell_enemy_index = world.random.randint(0, len(possible_spell_enemies) - 1)
-    #rom.write_bytes(0x11EF, bytearray(possible_spell_enemies[spell_enemy_index]))
+    print(spell_enemy_index, bytearray([possible_spell_enemies[spell_enemy_index]]))
+    rom.write_bytes(0x11EF, bytearray([possible_spell_enemies[spell_enemy_index]]))
 
     gp_flying_enemies = [0x06, 0x14, 0x15, 0x17, 0x1E]
     gp_generators = [0x0B, 0x0C, 0x0F, 0x16]
@@ -529,7 +548,7 @@ def randomize_palace_enemies(world, room_count, encounter_bank: [], small_enemie
         current_index += 2
         first_generator = 0x0
 
-        for enemy_index in range(floor(num_bytes / 2) - 1):
+        for enemy_index in range(floor((num_bytes - 1) / 2)):
             enemy = encounter_bank[current_index] & 0x3F
             page_number = encounter_bank[current_index] & 0xC0
 
@@ -586,8 +605,9 @@ def randomize_overworld_enemies(world, encounter_count, encounter_bank: [], smal
         num_bytes = encounter_bank[current_index]
         print("number of bytes: ", num_bytes)
         current_index += 2
+        first_generator = 0x0
 
-        for enemy_index in range(floor(num_bytes / 2) - 1):
+        for enemy_index in range(floor((num_bytes - 1) / 2)):
             enemy = encounter_bank[current_index] & 0x3F
             page_number = encounter_bank[current_index] & 0xC0
 
@@ -622,7 +642,11 @@ def randomize_overworld_enemies(world, encounter_count, encounter_bank: [], smal
             elif enemy in generators:
                 new_enemy_index = world.random.randint(0, len(generators) - 1)
                 new_enemy = generators[new_enemy_index]
-                print("old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
+                if first_generator != 0x0: # TODO: Add option to allow different generators
+                    new_enemy = first_generator
+
+                first_generator = new_enemy
+                print("generator old enemy: ", bytearray([enemy]), "new enemy: ", bytearray([new_enemy]))
                 encounter_bank[current_index] = new_enemy + page_number
 
             current_index += 2
